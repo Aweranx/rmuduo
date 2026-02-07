@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-namespace mymuduo {
+namespace rmuduo {
 namespace CurrentThread {
 
 thread_local int t_cachedTid = 0;
@@ -15,4 +15,4 @@ void cacheTid() {
 }
 
 }  // namespace CurrentThread
-}  // namespace mymuduo
+}  // namespace rmuduo

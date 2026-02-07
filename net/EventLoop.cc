@@ -39,9 +39,9 @@ EventLoop::EventLoop()
       poller_(Poller::newDefaultPoller(this)),
       wakeupFd_(createEventfd()),
       wakeupChannel_(new Channel(this, wakeupFd_)) {
-  LOG_DEBUG("EventLoop created {} in thread {}", this, threadId_);
+  LOG_DEBUG("EventLoop created {} in thread {}", (void*)this, threadId_);
   if (t_loopInThisThread) {
-    LOG_ERROR("Another EventLoop {} exists in this thread {}", this, threadId_);
+    LOG_ERROR("Another EventLoop {} exists in this thread {}", (void*)this, threadId_);
   } else {
     t_loopInThisThread = this;
   }
@@ -60,7 +60,7 @@ EventLoop::~EventLoop() {
 void EventLoop::loop() {
   looping_ = true;
   quit_ = false;
-  LOG_DEBUG("EventLoop {} start looping", this);
+  LOG_DEBUG("EventLoop {} start looping", (void*)this);
 
   while (!quit_) {
     activeChannels_.clear();
@@ -80,7 +80,7 @@ void EventLoop::loop() {
     doPendingFunctors();
   }
 
-  LOG_INFO("EventLoop {} stop looping", this);
+  LOG_INFO("EventLoop {} stop looping", (void*)this);
 }
 
 void EventLoop::quit() {

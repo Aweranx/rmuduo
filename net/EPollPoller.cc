@@ -102,7 +102,7 @@ void EPollPoller::update(int operation, Channel* channel) {
   evt.data.ptr = channel;
   int fd = channel->fd();
 
-  if (::epoll_ctl(epollfd_, EPOLL_CTL_MOD, fd, &evt) < 0) {
+  if (::epoll_ctl(epollfd_, operation, fd, &evt) < 0) {
     LOG_ERROR("epoll_ctl error:{}!", errno);
   }
 }

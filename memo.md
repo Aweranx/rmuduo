@@ -1,54 +1,15 @@
-# rmuduo 网络库架构设计文档
+### 🔑 rmuduo 资源所有权与借用关系表
 
-本项目参考 `muduo` 实现，基于 **Reactor** 模式构建高性能多线程网络服务器框架。
+| 资源 | 真正拥有者 (Owner) | 借用者 (User) | 职责描述 |
+| :--- | :--- | :--- | :--- |
+| **listenfd** | `Acceptor` | `EventLoop` / `Poller` | `Acceptor` 负责生命周期，`Poller` 负责监听 |
+| **connfd** | `TcpConnection` | `EventLoop` / `Poller` | `TcpConnection` 析构时自动调用 `close(fd)` |
+| **Channel** | `Acceptor` 或 `TcpConnection` | `EventLoop` / `Poller` | 作为 Fd 的包装，分发事件回调 |
+| **EventLoop** | `EventLoopThread` 栈 | `Acceptor` / `TcpConnection` | 提供运行时的 Reactor 循环环境 |
+| **TcpConnection** | `TcpServer` | | |
 
-## 1. 核心类图 (Class Diagram)
+baseloop 来自于用户使用时创建，subloop由threadpool管理，创建在每个线程的栈上，生命周期与线程同步。
 
-描述了库中主要组件的所有权（Composition）与关联（Association）关系。
-
-```mermaid
-classDiagram
-    class EventLoop {
-        -scoped_ptr~Poller~ poller_
-        -vector~Channel*~ activeChannels_
-        +loop()
-        +runInLoop(Functor)
-    }
-
-    class Poller {
-        <<interface>>
-        #map~int, Channel*~ channels_
-        +poll(timeout, ChannelList*)
-        +updateChannel(Channel*)
-    }
-
-    class Channel {
-        -int fd_
-        -int events_
-        -ReadCallback readCallback_
-        +handleEvent()
-        +setReadCallback(cb)
-    }
-
-    class TcpConnection {
-        -scoped_ptr~Socket~ socket_
-        -scoped_ptr~Channel~ channel_
-        -Buffer inputBuffer_
-        -Buffer outputBuffer_
-        +send(data)
-        +shutdown()
-    }
-
-    class Acceptor {
-        -Socket acceptSocket_
-        -Channel acceptChannel_
-        -NewConnectionCallback cb_
-        +listen()
-    }
-
-    EventLoop "1" *-- "1" Poller : 拥有并驱动
-    EventLoop "1" o-- "n" Channel : 管理其生命周期中的事件分发
-    TcpConnection "1" *-- "1" Channel : 包含用于处理业务IO
-    Acceptor "1" *-- "1" Channel : 包含用于处理新连接监听
-    TcpConnection ..> EventLoop : 在指定的Loop中运行
-    Acceptor ..> EventLoop : 在指定的Loop中运行
+将const shared_ptr& 作为参数去接受一个右值如shared_from_this，这时仅在构造shared_from_this时发生一次计数增加，函数结束后技术减少，const&将这个右值的生命周期延长至了函数结束。
+将const shared_ptr 作为参数去接受一个右值如shared_from_this，将会在构造shared_from_this时发生一次计数增加，传给参数时发生一次计数增加，函数结束减1，shared_from_this所在表达式结束减1；
+将const shared_ptr& 作为参数去接受一个左值，当左值失效后会导致悬空引用。

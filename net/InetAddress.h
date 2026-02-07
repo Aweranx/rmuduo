@@ -20,6 +20,7 @@ class InetAddress {
   const sockaddr* getSockAddr() const {
     return reinterpret_cast<const sockaddr*>(&addr_);
   }
+  void setSockAddr(const sockaddr_in& addr) { addr_ = addr; };
 
  private:
   sockaddr_in addr_;
