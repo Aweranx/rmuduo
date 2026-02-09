@@ -62,6 +62,6 @@ Poller.poll() → activeChannels_(就绪) → Channel::handleEvent()
 - 应用层可在此降速或采取流控措施，防止内存爆炸
 
 ### 7.定时器
-- 注册timerfd在loop中，当有timer到期时通知channel自己取出所有的到时timer执行回调。
+- 注册timerfd在loop中，当有timer到期时通知channel自己取出所有的到时timer执行回调
 
 
