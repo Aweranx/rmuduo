@@ -12,6 +12,8 @@
 #include "CurrentThread.h"
 #include "Logger.h"
 #include "Poller.h"
+#include "TimerId.h"
+#include "TimerQueue.h"
 #include "Timestamp.h"
 #include "global.h"
 
@@ -41,7 +43,11 @@ class EventLoop : public noncopyable {
   bool isInLoopThread() const { return threadId_ == CurrentThread::tid(); }
   bool eventHandling() const { return eventHandling_; }
 
-  // add code timers
+  /******timers********/
+  TimerId runAt(Timestamp time, TimerCallback cb);
+  TimerId runAfter(double delay, TimerCallback cb);
+  TimerId runEvery(double interval, TimerCallback cb);
+  void cancel(TimerId timerId);
 
  private:
   using ChannelList = std::vector<Channel*>;
@@ -57,7 +63,7 @@ class EventLoop : public noncopyable {
   Timestamp pollReturnTime_;
 
   std::unique_ptr<Poller> poller_;
-  // add code timerqueue
+  std::unique_ptr<TimerQueue> timerQueue_;
 
   int wakeupFd_;
   std::unique_ptr<Channel> wakeupChannel_;

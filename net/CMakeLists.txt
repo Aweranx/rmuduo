@@ -19,7 +19,9 @@ target_link_libraries(rmuduo
 # PUBLIC 使得链接了 rmuduo 的目标能直接找到 net 文件夹下的头文件
 target_include_directories(rmuduo 
     PUBLIC 
-        ${CMAKE_CURRENT_SOURCE_DIR} 
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}> 
+        $<INSTALL_INTERFACE:include>
+        
 )
 
 # 5. 设置编译选项

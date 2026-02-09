@@ -1,18 +1,19 @@
-# 这里的源文件是 example 目录下的 test.cpp
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/test.cpp")
-    
-    # 1. 定义可执行文件目标
-    add_executable(test_app test.cpp)
+# example/CMakeLists.txt
 
-    # 2. 链接我们在 net 目录下定义的 rmuduo 库
-    # 由于 net/CMakeLists.txt 中使用了 PUBLIC 属性，
-    # test_app 会自动继承 spdlog 的头文件路径和链接库
-    target_link_libraries(test_app PRIVATE rmuduo)
+# 打印一下路径，编译时看一眼屏幕，确认 CMake 跑到了这里
+message(STATUS "Entering example directory: ${CMAKE_CURRENT_SOURCE_DIR}")
 
-    # 3. (可选) 如果你的代码里习惯用 #include "net/TcpServer.h" 这种带路径的包含
-    # 则需要把项目根目录加入包含路径
-    target_include_directories(test_app PRIVATE ${CMAKE_SOURCE_DIR})
+# 建议直接指定，如果文件不存在，CMake 运行阶段就会报错提示你
+add_executable(echo_server echo_server.cc)
 
-    # 打印一条信息，方便调试确认
-    message(STATUS "example: test_app will be built and linked to rmuduo")
-endif()
+# 链接库
+# 此时 rmuduo 目标必须已经由 add_subdirectory(net) 定义过了
+target_link_libraries(echo_server PRIVATE rmuduo)
+
+# 包含路径
+target_include_directories(echo_server PRIVATE ${PROJECT_SOURCE_DIR})
+
+# 设置输出位置到 bin 目录
+set_target_properties(echo_server PROPERTIES 
+    RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/bin"
+)

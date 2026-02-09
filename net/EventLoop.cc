@@ -37,11 +37,13 @@ EventLoop::EventLoop()
       callingPendingFunctors_(false),
       threadId_(CurrentThread::tid()),
       poller_(Poller::newDefaultPoller(this)),
+      timerQueue_(new TimerQueue(this)),
       wakeupFd_(createEventfd()),
       wakeupChannel_(new Channel(this, wakeupFd_)) {
   LOG_DEBUG("EventLoop created {} in thread {}", (void*)this, threadId_);
   if (t_loopInThisThread) {
-    LOG_ERROR("Another EventLoop {} exists in this thread {}", (void*)this, threadId_);
+    LOG_ERROR("Another EventLoop {} exists in this thread {}", (void*)this,
+              threadId_);
   } else {
     t_loopInThisThread = this;
   }
@@ -146,5 +148,21 @@ void EventLoop::doPendingFunctors() {
   }
   callingPendingFunctors_ = false;
 }
+
+/******timers********/
+TimerId EventLoop::runAt(Timestamp time, TimerCallback cb) {
+  return timerQueue_->addTimer(std::move(cb), time, 0.0);
+}
+
+TimerId EventLoop::runAfter(double delay, TimerCallback cb) {
+  Timestamp time(addTime(Timestamp::now(), delay));
+  return runAt(time, std::move(cb));
+}
+
+TimerId EventLoop::runEvery(double interval, TimerCallback cb) {
+  Timestamp time(addTime(Timestamp::now(), interval));
+  return timerQueue_->addTimer(std::move(cb), time, interval);
+}
+void EventLoop::cancel(TimerId timerId) { return timerQueue_->cancel(timerId); }
 
 }  // namespace rmuduo
