@@ -14,6 +14,10 @@ class Timestamp {
   std::string toString() const;
   std::string toFormattedString(bool showMicroseconds = true) const;
 
+  void swap(Timestamp& that) {
+    std::swap(microSecondsSinceEpoch_, that.microSecondsSinceEpoch_);
+  }
+
   bool valid() const { return microSecondsSinceEpoch_ > 0; }
   static Timestamp invalid() { return Timestamp(); }
   static const int kMicroSecondsPerSecond = 1000 * 1000;
