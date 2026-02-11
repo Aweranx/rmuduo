@@ -43,6 +43,12 @@ class EventLoop : public noncopyable {
   bool isInLoopThread() const { return threadId_ == CurrentThread::tid(); }
   bool eventHandling() const { return eventHandling_; }
 
+  void setContext(const std::any& context) { context_ = context; }
+
+  const std::any& getContext() const { return context_; }
+
+  std::any* getMutableContext() { return &context_; }
+
   /******timers********/
   TimerId runAt(Timestamp time, TimerCallback cb);
   TimerId runAfter(double delay, TimerCallback cb);
@@ -67,6 +73,8 @@ class EventLoop : public noncopyable {
 
   int wakeupFd_;
   std::unique_ptr<Channel> wakeupChannel_;
+
+  std::any context_;  // 给上层如http用的
 
   ChannelList activeChannels_;
 

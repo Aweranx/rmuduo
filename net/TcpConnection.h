@@ -1,5 +1,6 @@
 #pragma once
 
+#include <any>
 #include <atomic>
 #include <memory>
 
@@ -56,6 +57,11 @@ class TcpConnection : public noncopyable,
   void connectEstablished();
   void connectDestroyed();
 
+  void setContext(const std::any& context) { context_ = context; }
+  const std::any& getContext() const { return context_; }
+
+  std::any* getMutableContext() { return &context_; }
+
  private:
   void handleRead(Timestamp receiveTime);
   void handleWrite();
@@ -85,6 +91,7 @@ class TcpConnection : public noncopyable,
 
   Buffer inputBuffer_;
   Buffer outputBuffer_;
+  std::any context_;
 };
 
 }  // namespace rmuduo
