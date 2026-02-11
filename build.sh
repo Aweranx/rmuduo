@@ -7,11 +7,11 @@ BUILD_DIR=$(pwd)/build
 INSTALL_DIR=/usr/local
 
 # 2. 清理并创建构建目录
-if [ -d "$BUILD_DIR" ]; then
-    echo "清理旧的构建目录..."
-    rm -rf "$BUILD_DIR"
-fi
-mkdir "$BUILD_DIR"
+# if [ -d "$BUILD_DIR" ]; then
+#     echo "清理旧的构建目录..."
+#     rm -rf "$BUILD_DIR"
+# fi
+# mkdir "$BUILD_DIR"
 
 # 3. 运行 CMake 配置
 # 使用 vcpkg 工具链，并指定安装前缀

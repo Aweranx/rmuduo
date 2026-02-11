@@ -8,7 +8,10 @@ add_executable(test_server Httpserver_test.cc)
 
 # 链接库
 # 此时 rmuduo 目标必须已经由 add_subdirectory(net) 定义过了
-target_link_libraries(test_server PRIVATE rmuduo)
+target_link_libraries(test_server PRIVATE 
+    rmuduo_http   # 这是存放 HttpServer 实现的库
+    rmuduo        # 这是存放 TcpServer 等基础类的库
+)
 
 # 包含路径
 target_include_directories(test_server PRIVATE ${PROJECT_SOURCE_DIR})

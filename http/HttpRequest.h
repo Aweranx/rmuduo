@@ -8,38 +8,6 @@
 #include <string>
 using namespace rmuduo;
 
-/**
-[ 请求行 Request Line ]
-内容:  POST      /api/login      HTTP/1.1       \r\n
-对应:  [Method]   [Path/URL]      [Version]      [CRLF]
-
-[ 请求首部 Request Headers ]
-内容:  Host: www.example.com\r\n
-对应:  [Header Key: Value][CRLF]
-
-内容:  Content-Type: application/json\r\n
-对应:  [Header Key: Value][CRLF]
-
-内容:  Content-Length: 32\r\n
-对应:  [Header Key: Value][CRLF]
-
-[ 空行 Empty Line ]
-内容:  \r\n
-对应:  [CRLF] (标记 Header 结束，Body 开始)
-
-[ 报文主体 Message Body ]
-内容:  {"username": "admin", "id": 123}
-对应:  [Entity Body / Payload]
-
-POST /api/login HTTP/1.1\r\n
-Host: www.example.com\r\n
-User-Agent: Mozilla/5.0\r\n
-Content-Type: application/json\r\n
-Content-Length: 32\r\n
-Connection: close\r\n
-\r\n
-{"username": "admin", "id": 123}
-*/
 
 class HttpRequest {
  public:
@@ -120,3 +88,36 @@ class HttpRequest {
   Timestamp receiveTime_;
   std::map<std::string, std::string> headers_;
 };
+
+/**
+[ 请求行 Request Line ]
+内容:  POST      /api/login      HTTP/1.1       \r\n
+对应:  [Method]   [Path/URL]      [Version]      [CRLF]
+
+[ 请求首部 Request Headers ]
+内容:  Host: www.example.com\r\n
+对应:  [Header Key: Value][CRLF]
+
+内容:  Content-Type: application/json\r\n
+对应:  [Header Key: Value][CRLF]
+
+内容:  Content-Length: 32\r\n
+对应:  [Header Key: Value][CRLF]
+
+[ 空行 Empty Line ]
+内容:  \r\n
+对应:  [CRLF] (标记 Header 结束，Body 开始)
+
+[ 报文主体 Message Body ]
+内容:  {"username": "admin", "id": 123}
+对应:  [Entity Body / Payload]
+
+POST /api/login HTTP/1.1\r\n
+Host: www.example.com\r\n
+User-Agent: Mozilla/5.0\r\n
+Content-Type: application/json\r\n
+Content-Length: 32\r\n
+Connection: close\r\n
+\r\n
+{"username": "admin", "id": 123}
+*/

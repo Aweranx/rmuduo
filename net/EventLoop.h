@@ -19,7 +19,7 @@
 
 namespace rmuduo {
 class EventLoop : public noncopyable {
- public:
+public:
   using Functor = std::function<void()>;
   EventLoop();
   ~EventLoop();
@@ -35,13 +35,19 @@ class EventLoop : public noncopyable {
   // 唤醒loop所在线程
   void wakeup();
 
-  void updateChannel(Channel* channel);
-  void removeChannel(Channel* channel);
-  void hasChannel(Channel* channel);
+  void updateChannel(Channel *channel);
+  void removeChannel(Channel *channel);
+  void hasChannel(Channel *channel);
 
   // 判断EventLoop对象是否在自己的线程里边
   bool isInLoopThread() const { return threadId_ == CurrentThread::tid(); }
   bool eventHandling() const { return eventHandling_; }
+
+  void setContext(const std::any &context) { context_ = context; }
+
+  const std::any &getContext() const { return context_; }
+
+  std::any *getMutableContext() { return &context_; }
 
   /******timers********/
   TimerId runAt(Timestamp time, TimerCallback cb);
@@ -49,11 +55,11 @@ class EventLoop : public noncopyable {
   TimerId runEvery(double interval, TimerCallback cb);
   void cancel(TimerId timerId);
 
- private:
-  using ChannelList = std::vector<Channel*>;
+private:
+  using ChannelList = std::vector<Channel *>;
 
-  void handleRead();         // wakeup
-  void doPendingFunctors();  // 执行回调
+  void handleRead();        // wakeup
+  void doPendingFunctors(); // 执行回调
 
   std::atomic_bool looping_;
   std::atomic_bool quit_;
@@ -68,10 +74,12 @@ class EventLoop : public noncopyable {
   int wakeupFd_;
   std::unique_ptr<Channel> wakeupChannel_;
 
+  std::any context_; // 供上层应用调用，如http
+
   ChannelList activeChannels_;
 
   std::atomic_bool callingPendingFunctors_;
   std::vector<Functor> pendingFunctors_;
   std::mutex mutex_;
 };
-}  // namespace rmuduo
+} // namespace rmuduo
