@@ -35,5 +35,8 @@ add_subdirectory(net)
 # 其次构建 HTTP 库 (生成 rmuduo_http，依赖 rmuduo)
 add_subdirectory(http)
 
+# RTMP 库
+add_subdirectory(rtmp)
+
 # 最后构建示例程序 (依赖上述库)
 add_subdirectory(example)
