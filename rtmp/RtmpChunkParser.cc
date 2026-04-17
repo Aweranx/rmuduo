@@ -68,48 +68,15 @@ bool RtmpChunkParser::parseOneChunk(Buffer* buf,
   auto& state = chunkStreams_[csid];
   size_t offset = basic_header_size;
 
-  // 当前阶段先支持最常见的 11 字节完整头（fmt=0）和续片头（fmt=3）。
-  if (fmt == kChunkHeaderType0) {
-    if (readable < offset + 11) {
-      return true;
-    }
-
-    const uint32_t timestamp = ReadUint24BE(data + offset);
-    const uint32_t message_length = ReadUint24BE(data + offset + 3);
-    const uint8_t type_id = static_cast<uint8_t>(data[offset + 6]);
-    const uint32_t message_stream_id = ReadUint32LE(data + offset + 7);
-    offset += 11;
-
-    if (timestamp == 0x00FFFFFF) {
-      if (readable < offset + 4) {
-        return true;
-      }
-      state.timestamp = ReadUint32BE(data + offset);
-      offset += 4;
-    } else {
-      state.timestamp = timestamp;
-    }
-
-    state.timestampDelta = 0;
-    state.messageLength = message_length;
-    state.typeId = type_id;
-    state.messageStreamId = message_stream_id;
-    state.bytesRead = 0;
-    state.payload.assign(message_length, '\0');
-    state.headerInitialized = true;
-  } else if (fmt == kChunkHeaderType3) {
-    if (!state.headerInitialized) {
-      if (error_message != nullptr) {
-        *error_message = "received fmt=3 chunk before first fmt=0 header";
-      }
-      return false;
-    }
-  } else {
-    if (error_message != nullptr) {
-      *error_message = "fmt=1/2 chunk headers are not implemented yet";
-    }
+  size_t message_header_size = 0;
+  if (!parseMessageHeader(data + offset, readable - offset, fmt, &state,
+                          &message_header_size, error_message)) {
     return false;
   }
+  if (message_header_size == 0) {
+    return true;
+  }
+  offset += message_header_size;
 
   if (!state.headerInitialized) {
     return true;
@@ -176,8 +143,131 @@ bool RtmpChunkParser::parseBasicHeader(const char* data, size_t readable_bytes,
     return true;
   }
 
+  *csid = 64 + static_cast<uint32_t>(static_cast<uint8_t>(data[1])) +
+          (static_cast<uint32_t>(static_cast<uint8_t>(data[2])) << 8);
+  *header_size = 3;
+  return true;
+}
+
+bool RtmpChunkParser::parseMessageHeader(const char* data, size_t readable_bytes,
+                                         uint8_t fmt, ChunkStreamState* state,
+                                         size_t* bytes_used,
+                                         std::string* error_message) const {
+  *bytes_used = 0;
+
+  if (fmt == kChunkHeaderType0) {
+    if (readable_bytes < 11) {
+      return true;
+    }
+
+    const uint32_t timestamp = ReadUint24BE(data);
+    state->messageLength = ReadUint24BE(data + 3);
+    state->typeId = static_cast<uint8_t>(data[6]);
+    state->messageStreamId = ReadUint32LE(data + 7);
+    state->timestampDelta = 0;
+    *bytes_used = 11;
+
+    if (timestamp == 0x00FFFFFF) {
+      if (readable_bytes < *bytes_used + 4) {
+        *bytes_used = 0;
+        return true;
+      }
+      state->extendedTimestamp = ReadUint32BE(data + *bytes_used);
+      state->timestamp = state->extendedTimestamp;
+      *bytes_used += 4;
+    } else {
+      state->extendedTimestamp = 0;
+      state->timestamp = timestamp;
+    }
+
+    state->bytesRead = 0;
+    state->payload.assign(state->messageLength, '\0');
+    state->headerInitialized = true;
+    return true;
+  }
+
+  if (!state->headerInitialized) {
+    if (error_message != nullptr) {
+      *error_message = "received continuation chunk before first fmt=0 header";
+    }
+    return false;
+  }
+
+  if (fmt == kChunkHeaderType1) {
+    if (readable_bytes < 7) {
+      return true;
+    }
+
+    const uint32_t timestamp_delta = ReadUint24BE(data);
+    state->messageLength = ReadUint24BE(data + 3);
+    state->typeId = static_cast<uint8_t>(data[6]);
+    *bytes_used = 7;
+
+    if (timestamp_delta == 0x00FFFFFF) {
+      if (readable_bytes < *bytes_used + 4) {
+        *bytes_used = 0;
+        return true;
+      }
+      state->extendedTimestamp = ReadUint32BE(data + *bytes_used);
+      state->timestampDelta = state->extendedTimestamp;
+      *bytes_used += 4;
+    } else {
+      state->extendedTimestamp = 0;
+      state->timestampDelta = timestamp_delta;
+    }
+
+    state->timestamp += state->timestampDelta;
+    state->bytesRead = 0;
+    state->payload.assign(state->messageLength, '\0');
+    return true;
+  }
+
+  if (fmt == kChunkHeaderType2) {
+    if (readable_bytes < 3) {
+      return true;
+    }
+
+    const uint32_t timestamp_delta = ReadUint24BE(data);
+    *bytes_used = 3;
+
+    if (timestamp_delta == 0x00FFFFFF) {
+      if (readable_bytes < *bytes_used + 4) {
+        *bytes_used = 0;
+        return true;
+      }
+      state->extendedTimestamp = ReadUint32BE(data + *bytes_used);
+      state->timestampDelta = state->extendedTimestamp;
+      *bytes_used += 4;
+    } else {
+      state->extendedTimestamp = 0;
+      state->timestampDelta = timestamp_delta;
+    }
+
+    state->timestamp += state->timestampDelta;
+    state->bytesRead = 0;
+    state->payload.assign(state->messageLength, '\0');
+    return true;
+  }
+
+  if (fmt == kChunkHeaderType3) {
+    // fmt=3 不带新的 message header，沿用上一次该 csid 的头信息。
+    // 只有在前面消息未收完时，它才表示“续片”；否则表示一个新消息复用旧头。
+    if (state->bytesRead == 0 && state->messageLength > 0) {
+      state->timestamp += state->timestampDelta;
+      state->payload.assign(state->messageLength, '\0');
+    }
+
+    if (state->extendedTimestamp != 0) {
+      if (readable_bytes < 4) {
+        return true;
+      }
+      *bytes_used = 4;
+    }
+    return true;
+  }
+
   if (error_message != nullptr) {
-    *error_message = "three-byte basic header is not implemented yet";
+    *error_message = "invalid chunk header fmt";
   }
   return false;
 }

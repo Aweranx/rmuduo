@@ -25,6 +25,7 @@ class RtmpChunkParser {
   struct ChunkStreamState {
     uint32_t timestamp = 0;
     uint32_t timestampDelta = 0;
+    uint32_t extendedTimestamp = 0;
     uint32_t messageLength = 0;
     uint8_t typeId = 0;
     uint32_t messageStreamId = 0;
@@ -38,6 +39,9 @@ class RtmpChunkParser {
   bool parseBasicHeader(const char* data, size_t readable_bytes, uint8_t* fmt,
                         uint32_t* csid, size_t* header_size,
                         std::string* error_message) const;
+  bool parseMessageHeader(const char* data, size_t readable_bytes, uint8_t fmt,
+                          ChunkStreamState* state, size_t* bytes_used,
+                          std::string* error_message) const;
 
   uint32_t inChunkSize_ = kDefaultChunkSize;
   std::unordered_map<uint32_t, ChunkStreamState> chunkStreams_;
