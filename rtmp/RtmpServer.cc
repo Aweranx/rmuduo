@@ -1,13 +1,26 @@
 #include "RtmpServer.h"
 
 #include <any>
+#include <cstdint>
 #include <utility>
+#include <vector>
 
 #include <rmuduo/net/Buffer.h>
 #include <rmuduo/net/EventLoop.h>
 #include <rmuduo/net/Logger.h>
 
 namespace rmuduo::rtmp {
+
+namespace {
+
+uint32_t ReadUint32BE(const char* data) {
+  return (static_cast<uint32_t>(static_cast<uint8_t>(data[0])) << 24) |
+         (static_cast<uint32_t>(static_cast<uint8_t>(data[1])) << 16) |
+         (static_cast<uint32_t>(static_cast<uint8_t>(data[2])) << 8) |
+         static_cast<uint32_t>(static_cast<uint8_t>(data[3]));
+}
+
+}  // namespace
 
 RtmpServer::RtmpServer(EventLoop* loop, const InetAddress& listen_addr,
                        const std::string& name, TcpServer::Option option)
@@ -81,10 +94,31 @@ void RtmpServer::onMessage(const TcpConnectionPtr& conn, Buffer* buf,
     return;
   }
 
-  // 握手完成后，这里就是后续 chunk 解析器的接入点。
-  LOG_INFO("RtmpServer has {} post-handshake bytes pending on {}", 
-           buf->readableBytes(), conn->name());
-  buf->retrieveAll();
+  std::vector<RtmpMessage> messages;
+  std::string error_message;
+  if (!context->chunkParser().parse(buf, &messages, &error_message)) {
+    LOG_ERROR("RtmpServer chunk parse failed on {}: {}", conn->name(),
+              error_message);
+    conn->shutdown();
+    return;
+  }
+
+  for (const auto& message : messages) {
+    LOG_INFO(
+        "RtmpServer parsed message on {}: csid={}, type={}, len={}, stream={}",
+        conn->name(), message.chunkStreamId, message.typeId,
+        message.messageLength, message.messageStreamId);
+
+    // 客户端可能先下发 Set Chunk Size，后续 chunk 解析要立即切换到新的入站大小。
+    if (message.typeId == kMessageTypeSetChunkSize &&
+        message.payload.size() >= sizeof(uint32_t)) {
+      const uint32_t chunk_size = ReadUint32BE(message.payload.data());
+      context->setInChunkSize(chunk_size);
+      context->chunkParser().setInChunkSize(chunk_size);
+      LOG_INFO("RtmpServer updated inbound chunk size on {} to {}",
+               conn->name(), chunk_size);
+    }
+  }
 }
 
 RtmpConnectionContext* RtmpServer::getContext(

@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 
+#include "RtmpChunkParser.h"
 #include "RtmpHandshake.h"
 #include "RtmpTypes.h"
 
@@ -56,6 +57,9 @@ class RtmpConnectionContext {
   RtmpHandshake& handshake() { return handshake_; }
   const RtmpHandshake& handshake() const { return handshake_; }
 
+  RtmpChunkParser& chunkParser() { return chunkParser_; }
+  const RtmpChunkParser& chunkParser() const { return chunkParser_; }
+
  private:
   ConnectionRole role_ = ConnectionRole::kUnknown;
   uint32_t inChunkSize_ = kDefaultChunkSize;
@@ -68,6 +72,8 @@ class RtmpConnectionContext {
   std::weak_ptr<RtmpSession> session_;
   // 握手状态机独立封装，避免把字节级细节塞进 server 回调里。
   RtmpHandshake handshake_;
+  // chunk 解析器同样是连接级对象，因为每个连接都要维护自己的 csid 状态。
+  RtmpChunkParser chunkParser_;
 };
 
 }  // namespace rmuduo::rtmp

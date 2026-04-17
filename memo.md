@@ -66,3 +66,7 @@ Poller.poll() → activeChannels_(就绪) → Channel::handleEvent()
 - 注册timerfd在loop中，当有timer到期时通知channel自己取出所有的到时timer执行回调
 
 
+## 8. **buffer的生命周期**
+- 每个TcpConnection都有自己的buffer
+- TcpConnection创建buffer，从他负责的fd中读出数据
+- 通过messageCallback传给onMessage的负责人
