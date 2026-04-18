@@ -5,6 +5,7 @@
 
 #include <rmuduo/net/TcpServer.h>
 
+#include "RtmpConnection.h"
 #include "RtmpConnectionContext.h"
 #include "RtmpSessionManager.h"
 
@@ -23,7 +24,7 @@ class RtmpServer : noncopyable {
  private:
   // 连接建立/关闭时挂接和清理 RTMP 上下文。
   void onConnection(const TcpConnectionPtr& conn);
-  // 当前阶段先驱动握手；握手完成后再进入 chunk/message 解析。
+  // 接入层只负责把输入转发给连接级协议处理器。
   void onMessage(const TcpConnectionPtr& conn, Buffer* buf, Timestamp receiveTime);
 
   RtmpConnectionContext* getContext(const TcpConnectionPtr& conn) const;

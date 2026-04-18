@@ -1,587 +1,532 @@
-# RTMP Rebuild Plan
+# RTMP Build Plan
 
 ## 目标
 
-当前 `rtmp/` 目录里的代码更像早期草稿，不建议继续在原有结构上修补。更稳妥的做法是保留必要的协议笔记，然后基于现有 `net` 框架重新搭一个 RTMP 模块。
+这份计划不再按“最小 RTMP 协议练手版”来写，而是按 `/home/ranx/work/viewcode/rtmp` 那个项目已经达到的复杂度来定目标。
 
-第一版目标建议限制为：
+对标目标不是完整流媒体平台，而是一个**单机、内存转发型 RTMP/HTTP-FLV 服务**，能力大致包括：
 
-- 支持 RTMP over TCP 长连接
-- 支持标准握手
-- 支持 AMF0 command
-- 支持一个 publisher，多个 player
-- 支持 metadata / audio / video 转发
+- 支持 RTMP 服务端接入
+- 支持 `connect / createStream / publish / play / deleteStream`
+- 支持 H.264 / AAC 转发
+- 支持 metadata、sequence header 处理
+- 支持 GOP 缓存
+- 支持一个 publisher、多 player
+- 支持 HTTP-FLV 作为旁路输出
+- 具备基本事件通知和会话管理
 
-第一版暂时不做：
+当前仓库已经做到的是：
 
-- 转码
-- HLS / HTTP-FLV 输出
-- 鉴权
-- 录制
-- 集群
-- 回源
+- `TcpServer` 接入链路完成
+- RTMP 握手完成
+- RTMP chunk/message 解析完成
+- AMF0 基础解码完成
+- `connect` 最小响应完成
 
-这样可以先做出一个结构清晰、可验证、可演进的最小闭环。
+所以接下来的计划，不是继续“从零设计”，而是要把现在这套实现推进到接近外部项目的架构深度。
 
-## 总体架构
+## 外部项目的真实复杂度
 
-建议按下面几层拆分：
+`/home/ranx/work/viewcode/rtmp` 不是一个“只有 RTMP 握手和 command 的 demo”，它已经是一个小型流媒体服务器原型，至少包含 4 层能力：
 
-1. `RtmpServer`
-2. `RtmpConnection`
-3. `RtmpSession` / `RtmpSessionManager`
-4. `Chunk Codec` / `Message Assembler`
-5. `AMF0 Codec`
-6. `Command Handler`
-
-职责划分如下：
+### 1. 接入层
 
 - `RtmpServer`
-  - 基于 `TcpServer` 接受连接
-  - 给每个 `TcpConnection` 绑定 RTMP 上下文
-  - 只负责接入，不负责协议细节
+- `HttpFlvServer`
+- 连接生命周期管理
+- 事件回调
 
+这一层负责：
+
+- 接受连接
+- 创建协议连接对象
+- 路由到 RTMP 或 HTTP-FLV
+- 对外报告流事件
+
+### 2. 协议层
+
+- `RtmpHandshake`
+- `RtmpChunk`
+- `amf`
 - `RtmpConnection`
-  - 每个 TCP 连接一个实例
-  - 负责连接级状态机
-  - 负责推进握手、chunk 解码、message 分发
-  - 不负责全局流管理
+
+这一层负责：
+
+- 握手
+- chunk 编解码
+- AMF 命令解析
+- RTMP 命令收发
+
+### 3. 会话层
 
 - `RtmpSession`
-  - 表示一条流会话
-  - 管理一个 publisher 和多个 player
-  - 保存 metadata、sequence header、GOP 缓存
-  - 不直接操作 socket
+- publisher/player 管理
+- stream path 管理
 
-- `RtmpSessionManager`
-  - 以 `app + streamName` 为 key 管理 session
-  - 负责查找、创建、销毁 session
+这一层负责：
 
-- `RtmpChunkCodec`
-  - 负责从 TCP 字节流里解析 RTMP chunk
-  - 处理 basic header、message header、extended timestamp
-  - 处理半包、粘包、跨多次读取
+- 管理一路流
+- 管理一个推流端和多个播放端
+- 会话销毁
 
-- `RtmpMessageAssembler`
-  - 负责把多个 chunk fragment 重组成完整 RTMP message
-  - 维护 chunk stream 级上下文
+### 4. 媒体分发层
 
-- `Amf0`
-  - 负责 command message 的编解码
+- metadata 保存与下发
+- AVC/AAC sequence header
+- GOP 缓存
+- 音视频分发
+- HTTP-FLV 复用
 
-- `RtmpCommandHandler`
-  - 负责 `connect`、`createStream`、`publish`、`play` 等命令
-  - 基于完整 RTMP message 工作
+这一层负责：
 
-## 建议目录结构
+- 让新 player 加入后快速起播
+- 让 RTMP 和 HTTP-FLV 共用同一份媒体缓存
+
+所以如果要按这个复杂度推进，当前仓库不能只停留在“协议类堆在 `RtmpServer` 里”，而要显式分层。
+
+## 当前实现和目标实现的差距
+
+当前实现的优点：
+
+- 连接级状态抽象是对的
+- `RtmpChunkParser` 和握手分开了
+- `Command Message AMF0` 已经能解出结构化命令
+- `connect` 已经能返回最小控制消息
+
+当前实现的主要缺口：
+
+### 1. 没有 `RtmpConnection`
+
+现在大量协议逻辑还在 `RtmpServer::onMessage()` 里。  
+这不适合继续扩展，因为：
+
+- `createStream`
+- `publish`
+- `play`
+- 媒体消息处理
+- 状态回包
+
+都属于**连接级协议行为**，不应该继续塞进 `RtmpServer`。
+
+### 2. 会话层太薄
+
+现在的 `RtmpSession / RtmpSessionManager` 只够表达“publisher/player 关系”，还没有：
+
+- metadata
+- sequence header
+- GOP cache
+- 新播放端首包补发
+- 空 session 清理策略
+
+### 3. 出站编码还只是最小版
+
+现在有：
+
+- `Amf0Encoder`
+- `RtmpChunkWriter`
+
+但还缺：
+
+- 常用控制消息的统一封装
+- `onStatus`
+- `_result(createStream)`
+- `publish/play` 响应
+
+### 4. 媒体层还没接入
+
+当前没有开始处理：
+
+- RTMP video message
+- RTMP audio message
+- metadata `@setDataFrame/onMetaData`
+- H.264/AAC sequence header
+
+### 5. 没有 HTTP-FLV 旁路
+
+外部项目的复杂度里，HTTP-FLV 不是附属功能，而是复用同一份 session 的第二协议出口。
+
+## 新的目标架构
+
+基于当前仓库，建议调整成下面这个结构：
 
 ```text
 rtmp/
   RTMP_PLAN.md
-  protocol/
-    RtmpConstants.h
-  amf/
-    Amf0.h
-    Amf0.cc
-  chunk/
-    RtmpChunkCodec.h
-    RtmpChunkCodec.cc
-  message/
-    RtmpMessage.h
-    RtmpMessageAssembler.h
-    RtmpMessageAssembler.cc
-  command/
-    RtmpCommandHandler.h
-    RtmpCommandHandler.cc
-  session/
-    RtmpSession.h
-    RtmpSession.cc
-    RtmpSessionManager.h
-    RtmpSessionManager.cc
-  server/
-    RtmpServer.h
-    RtmpServer.cc
-    RtmpConnection.h
-    RtmpConnection.cc
-    RtmpHandshake.h
-    RtmpHandshake.cc
+  RTMP_MESSAGE_EXPLAIN.md
+
+  RtmpTypes.h
+  RtmpMessage.h
+
+  Amf0Value.h/.cc
+  Amf0Decoder.h/.cc
+  Amf0Encoder.h/.cc
+
+  RtmpHandshake.h/.cc
+  RtmpChunkParser.h/.cc
+  RtmpChunkWriter.h/.cc
+  RtmpCommandMessage.h/.cc
+
+  RtmpConnectionContext.h/.cc
+  RtmpConnection.h/.cc
+
+  RtmpSession.h/.cc
+  RtmpSessionManager.h/.cc
+
+  RtmpServer.h/.cc
 ```
 
-如果暂时不想拆这么细，也至少要保证以下边界：
+如果继续扩：
 
-- 握手和 chunk 解码分开
-- chunk 解码和 command 处理分开
-- connection 和 session 分开
-- AMF 编解码单独成模块
+```text
+httpflv/
+  HttpFlvServer.h/.cc
+  HttpFlvConnection.h/.cc
+```
 
-## Todo List
-
-1. 清理现有 `rtmp` 草稿代码
-2. 明确第一阶段功能边界
-3. 重建 RTMP 模块骨架
-4. 打通连接生命周期
-5. 实现握手状态机
-6. 实现 chunk 基础解码器
-7. 实现 message 重组层
-8. 实现 AMF0 编解码
-9. 实现 command 分发器
-10. 打通 `connect`
-11. 打通 `createStream`
-12. 打通 `publish`
-13. 实现 `RtmpSessionManager`
-14. 接收 metadata / audio / video
-15. 打通 `play`
-16. 加入 metadata 和 GOP 缓存
-17. 实现断连清理与资源回收
-18. 补测试与抓包验证
-19. 补日志、指标和排障信息
-20. 再评估高级能力
-
-## 每一步的详细说明
-
-### 1. 清理现有 `rtmp` 草稿代码
-
-目标是把当前 `rtmp/` 从“未成型实验代码”变成“可重新设计的干净入口”。
-
-建议做法：
-
-- 删除当前未稳定的实现文件
-- 保留协议笔记
-- 保留一个空的 `CMakeLists.txt` 或暂时不接入顶层构建
-
-原因：
-
-- 现在的草稿没有形成清晰抽象
-- 如果继续修补，协议解析、连接状态、业务会话很容易耦合到一起
-- 早期一次重建的成本，远小于后期反复返工
-
-### 2. 明确第一阶段功能边界
-
-这一步不是文档工作，而是为了避免后续开发失控。
-
-必须先定清楚：
-
-- 第一版只做 RTMP relay，不做转码
-- 只做单机内存分发
-- 只支持 AMF0
-- 只支持最基本命令集
-- 只支持单 publisher，多 player
-
-如果这一步不先锁定，后面很容易边写边加功能，导致整体结构越来越散。
-
-### 3. 重建 RTMP 模块骨架
-
-先把文件结构和核心类型建出来，即使内部大多还是空实现也没关系。
-
-这一步的目标是先把“模块边界”定下来，而不是立刻做协议细节。建议先定义：
+关键边界要改成：
 
 - `RtmpServer`
+  - 只负责接入
+  - 创建/绑定 `RtmpConnection`
+  - 持有 `RtmpSessionManager`
+
 - `RtmpConnection`
-- `RtmpConnectionContext`
+  - 负责所有连接级 RTMP 协议流程
+  - 握手、chunk、AMF、command、媒体消息
+  - 持有对 `RtmpServer` / `RtmpSessionManager` 的访问入口
+
 - `RtmpSession`
-- `RtmpSessionManager`
-- `RtmpChunkCodec`
-- `RtmpMessageAssembler`
-- `Amf0`
-- `RtmpCommandHandler`
+  - 负责一路流的 publisher/player、缓存和分发
 
-为什么要先做骨架：
+## 重写后的实施计划
 
-- 先分层，再填逻辑
-- 防止所有代码都堆到一个类里
-- 便于后续单独测试每一层
+下面的计划按“接近外部项目复杂度”的顺序来写，不再是单纯协议练习顺序。
 
-### 4. 打通连接生命周期
+### 阶段 A：把协议逻辑从 `RtmpServer` 迁到 `RtmpConnection`
 
-这一阶段先不解析 RTMP，只验证接入链路。
+这是第一优先级。
 
-要做到：
+#### A1. 新增 `RtmpConnection`
 
-- 新连接进入时创建 RTMP 上下文
-- 收到数据时进入 RTMP 入口函数
-- 连接关闭时正确回收连接级状态
-- 打出清晰日志
+职责：
 
-建议日志至少包括：
+- 持有 `TcpConnectionPtr`
+- 持有或访问 `RtmpConnectionContext`
+- 提供：
+  - `onMessage(Buffer*)`
+  - `handleHandshake()`
+  - `handleMessages(std::vector<RtmpMessage>)`
+  - `handleCommand(const RtmpCommandMessage&)`
 
-- 连接建立
-- 当前连接 id
-- 对端地址
-- 收到字节数
-- 连接关闭原因
+为什么必须先做：
 
-这一步成功后，说明现有 `TcpServer` 这层可以平稳承载 RTMP。
+- 现在 `RtmpServer` 已经开始承载 command 行为了
+- 再往下做 `createStream/publish/play` 会导致 server 膨胀
 
-### 5. 实现握手状态机
+#### A2. `RtmpServer` 退化成接入层
 
-握手必须独立成一个连接级状态机，不要直接塞进 chunk 解码流程。
+改法：
 
-建议状态：
+- `onConnection()` 时给 `TcpConnection` 绑定 `RtmpConnection`
+- `onMessage()` 里只转发给 `RtmpConnection`
+- `RtmpServer` 只保留：
+  - `RtmpSessionManager`
+  - event callback
+  - 配置项
 
-- `kWaitC0C1`
-- `kSendS0S1S2`
-- `kWaitC2`
-- `kHandshakeDone`
+### 阶段 B：补齐命令控制面
 
-实现重点：
+这部分做完后，协议层就接近外部项目的 command 复杂度。
 
-- 支持增量输入
-- 支持半包
-- 支持一次 `onMessage` 收到多段数据
-- 状态切换后继续消费剩余缓冲区
+#### B1. 处理 `createStream`
 
-不要写成“假设一次收到完整 `C0C1`”的实现。网络层不会保证这一点。
-
-阶段完成标准：
-
-- 常见 RTMP 客户端能顺利完成握手
-- 抓包能看到正确的 `C0/C1/S0/S1/S2/C2` 交换
-
-### 6. 实现 chunk 基础解码器
-
-握手完成后，所有 RTMP 业务数据都会走 chunk 层。
-
-`RtmpChunkCodec` 要处理：
-
-- basic header
-- fmt
-- chunk stream id
-- message header
-- extended timestamp
-- inbound chunk size
-
-这一步只负责“从字节流中切出 chunk 片段”，不负责上层命令语义。
-
-实现关键点：
-
-- 保留每个 chunk stream 的解析上下文
-- 正确处理 format 0/1/2/3
-- 处理跨多次读取的 payload
-
-这一层是 RTMP 最容易出错的地方之一，建议单独做大量单元测试。
-
-### 7. 实现 message 重组层
-
-RTMP 的完整 message 往往会被拆成多个 chunk，所以必须有 assembler。
-
-`RtmpMessageAssembler` 的职责：
-
-- 按 chunk stream 维护正在组装的 message
-- 在 payload 收满时输出完整 `RtmpMessage`
-- 向上层隐藏 chunk 分片细节
-
-这一层完成后，上层模块就不需要关心：
-
-- 包有没有收全
-- 一个 message 被拆成了几片
-- 当前这片是不是最后一片
-
-这能显著降低 command 层和媒体层的复杂度。
-
-### 8. 实现 AMF0 编解码
-
-命令消息的 payload 需要 AMF0 解码。
-
-第一版建议只实现最小必要类型：
-
-- Number
-- Boolean
-- String
-- Null
-- Object
-- ECMA Array
-
-这已经足够支撑：
-
-- `connect`
-- `createStream`
-- `publish`
-- `play`
-- `_result`
-- `onStatus`
-
-建议把 AMF 做成独立 API，例如：
-
-- 输入 `Buffer` 或字节序列，输出 `AmfValue` 列表
-- 输入 `AmfValue` 列表，输出编码后的 payload
-
-这样后续 command 层只关心语义，不关心二进制细节。
-
-### 9. 实现 command 分发器
-
-当收到了完整 command message 后，交给 `RtmpCommandHandler`。
-
-它负责：
-
-- 解码命令名
-- 读取 transaction id
-- 提取 command object 和参数
-- 分发到具体 handler
-
-建议先支持：
-
-- `connect`
-- `createStream`
-- `publish`
-- `play`
-- `deleteStream`
-- `closeStream`
-
-这一步要刻意避免把命令处理写死在 `RtmpConnection` 里，否则连接类会迅速膨胀。
-
-### 10. 打通 `connect`
-
-这是第一个完整里程碑。
-
-实现内容：
-
-- 正确解析客户端 `connect`
-- 返回必要控制消息
-- 返回 `_result`
-
-通常至少包括：
-
-- Window Acknowledgement Size
-- Set Peer Bandwidth
-- Set Chunk Size
-- `_result`
-
-如果 `connect` 能成功，基本说明以下链路都打通了：
-
-- 握手
-- chunk 解码
-- message 重组
-- AMF 解码
-- 基础响应编码
-
-### 11. 打通 `createStream`
-
-这一步主要是建立连接内的 stream 语义。
-
-需要做的事：
+目标：
 
 - 接收 `createStream`
-- 分配 stream id
 - 返回 `_result`
+- 分配一个 `stream id`
 
-设计注意点：
+当前需要的修改：
 
-- 不要假设一个连接只会用一个 stream id
-- 至少要为未来多 stream 保留映射结构
+- `RtmpConnectionContext` 新增：
+  - `streamId`
+  - `transaction counter` 或当前连接流状态
 
-### 12. 打通 `publish`
+#### B2. 处理 `publish`
 
-收到 `publish` 后，说明客户端要开始推流。
+目标：
 
-需要做的事：
+- 从 arguments 里拿到 `streamName`
+- 组合出 `streamPath`，如 `/live/01`
+- 到 `RtmpSessionManager` 里 `getOrCreate`
+- 把当前连接设成 publisher
+- 回 `onStatus(NetStream.Publish.Start)`
 
-- 解析 app、streamName
-- 在 `RtmpSessionManager` 中找到或创建 session
-- 将当前连接标记为 publisher
-- 返回发布成功状态
+当前需要的修改：
 
-建议在这个阶段就把“连接”和“会话”彻底分开：
+- `RtmpConnectionContext` 新增：
+  - `streamPath`
+- `RtmpSession` 新增：
+  - `setPublisher`
+  - publisher 状态检查
 
-- `RtmpConnection` 代表客户端连接
-- `RtmpSession` 代表一条流
+#### B3. 处理 `play`
 
-### 13. 实现 `RtmpSessionManager`
+目标：
 
-这一层是业务结构的核心。
+- 找到 session
+- 把当前连接加成 player
+- 回 `onStatus(NetStream.Play.Start)`
+- 先发 metadata / sequence header / GOP，再发实时流
 
-建议职责：
+当前需要的修改：
 
-- 以 `app + streamName` 为 key 查找 session
-- 创建新 session
-- 绑定 publisher
-- 添加和移除 player
-- session 空闲时销毁
+- `RtmpSession` 要具备“新 player 入场补发缓存”的能力
 
-这层不要处理协议解析，不要依赖 socket 细节。  
-它应该只表达流关系和转发语义。
+#### B4. 处理 `deleteStream`
 
-### 14. 接收 metadata / audio / video
+目标：
 
-从 `publish` 开始，服务端会收到真正的媒体数据。
+- 连接主动关闭发布或播放时，能从 session 中摘掉
+- 空 session 可销毁
 
-这个阶段先做最小能力：
+### 阶段 C：接入媒体消息
 
-- 收到 metadata 时保存最新版本
-- 收到 audio message 时转发给 player
-- 收到 video message 时转发给 player
+这是从“控制通了”到“真的能转发流”的分水岭。
 
-此时先不追求首屏体验，只先验证：
+#### C1. 处理 metadata
 
-- 推流端持续发送
-- 服务端持续收包
-- 播放端能收到并消费
+重点消息：
 
-### 15. 打通 `play`
+- `Data Message AMF0`
+- 常见形式：`@setDataFrame`, `onMetaData`
 
-当客户端发送 `play` 后，需要：
+要做的事：
 
-- 根据流名找到 session
-- 把当前连接注册为 player
-- 返回播放开始状态
-- 开始发送已有缓存和实时媒体消息
+- 解析 payload
+- 把 metadata 存到 session
+- 给已存在 player 广播 metadata
 
-这一步完成后，系统已经具备最小 RTMP relay 能力。
+当前需要的修改：
 
-### 16. 加入 metadata 和 GOP 缓存
+- 需要一个 `metadata` 的结构化表示
+- 或至少保存原始 AMF0 payload
 
-这是提升可用性的关键步骤。
+#### C2. 处理 video
 
-建议至少缓存：
+最小目标：
 
-- 最新 metadata
-- 最新音频 sequence header
-- 最新视频 sequence header
-- 最近一个 GOP
+- 收到 RTMP video message 后分发给 session
+- 识别 H.264 sequence header
+- 识别关键帧
 
-原因：
+当前需要的修改：
 
-- 新播放器加入时，如果没有缓存，常常要等下一个关键帧才能出画
-- 有了缓存后，新 player 可以更快起播
+- `RtmpSession` 新增：
+  - latest AVC sequence header
+  - video 分发接口
 
-### 17. 实现断连清理与资源回收
+#### C3. 处理 audio
 
-这一步必须专门处理，不能顺手带过。
+最小目标：
 
-至少要覆盖：
+- 收到 RTMP audio message 后分发给 session
+- 识别 AAC sequence header
 
-- publisher 断开后 session 如何变化
-- player 断开后如何从 session 移除
-- 空 session 是否延迟销毁
-- 跨线程移除时如何避免悬垂引用
-- 连接关闭后回调链是否仍可能访问旧对象
+当前需要的修改：
 
-这部分如果做不好，后面最常见的问题就是：
+- `RtmpSession` 新增：
+  - latest AAC sequence header
+  - audio 分发接口
 
-- 内存泄漏
-- use-after-free
-- session 状态脏掉
+### 阶段 D：补 session 缓存层
 
-### 18. 补测试与抓包验证
+这是对齐外部项目复杂度最关键的一步。
 
-RTMP 协议实现必须配合验证，不要靠“能跑起来”判断正确性。
+#### D1. metadata 缓存
 
-建议至少有三类验证：
+- session 内持有 latest metadata
+- 新 player 加入时先发 metadata
 
-- 单元测试
-  - AMF0 编解码
-  - chunk header 解析
-  - message 重组
+#### D2. sequence header 缓存
 
-- 集成测试
-  - 握手
-  - `connect`
-  - `publish`
-  - `play`
+- session 内持有 AVC/AAC sequence header
+- 新 player 加入时先发 sequence header
 
-- 抓包验证
-  - 用 Wireshark 或客户端日志确认时序和字段
+#### D3. GOP 缓存
 
-抓包的价值非常高，因为很多 RTMP 问题不会直接崩溃，只会表现为客户端无响应或静默断开。
+- session 内保存最近 1 个或 N 个 GOP
+- 新 player 加入时补发
 
-### 19. 补日志、指标和排障信息
+当前建议：
 
-RTMP 服务一旦开始跑真实流量，没有观测能力很难维护。
+- 先做“只缓存最近一个 GOP”
+- 不要一开始就做复杂淘汰策略
 
-最低建议：
+### 阶段 E：事件和管理层补齐
 
-- 连接建立与断开日志
-- 握手状态推进日志
-- command 收发日志
-- session 创建与销毁日志
-- publisher/player 绑定关系日志
-- 异常断流原因
+这部分是为了对齐外部项目在“可运维性”和“服务化”上的复杂度。
 
-进一步可以加：
+#### E1. 事件回调
 
-- 当前连接数
-- 当前 session 数
-- 每路流码率
-- 每个 player 的消费延迟
+建议 `RtmpServer` 增加事件接口：
 
-### 20. 再评估高级能力
+- `on_publish(streamPath)`
+- `on_play(streamPath)`
+- `on_unpublish(streamPath)`
+- `on_close(streamPath)`
 
-只有在前面的最小闭环稳定后，再考虑以下能力：
+#### E2. 定时清理空 session
 
-- 鉴权
-- 录制
-- HLS / HTTP-FLV 输出
-- 回源
-- 集群
-- 低延迟优化
-- 更完整的 RTMP 兼容性
+建议和外部项目一样，由 server 定时清空没有 publisher/player 的 session。
 
-这些都不应该进入第一阶段。
+#### E3. 连接关闭后的角色清理
 
-## 推荐里程碑
+这里你已经有雏形，但后面必须和：
 
-### 阶段一：协议底座
+- publisher
+- player
+- stream id
+- session
 
-- 清理旧代码
-- 建立新骨架
-- 打通连接生命周期
-- 完成握手
+做完整收口。
 
-完成标准：
+### 阶段 F：HTTP-FLV 旁路
 
-- 客户端可以连入并完成 RTMP 握手
+如果目标是接近外部项目复杂度，这一步不能省。
 
-### 阶段二：控制面
+建议策略：
 
-- 完成 chunk 解码
-- 完成 message 重组
-- 完成 AMF0
-- 打通 `connect`
-- 打通 `createStream`
+- 不要把 HTTP-FLV 当成 RTMP 的一部分写进 `rtmp/`
+- 单独建 `httpflv/`
+- 复用 `RtmpSession` 的 metadata / sequence header / GOP / AV frame 分发
 
-完成标准：
+这样结构会更清楚。
 
-- 客户端可以成功建立 RTMP 控制会话
+## 如何修改现在的代码
 
-### 阶段三：推流
+这一部分只说“从当前仓库出发，最应该怎么改”，不讲泛泛方案。
 
-- 打通 `publish`
-- 引入 `RtmpSessionManager`
-- 接收 metadata/audio/video
+### 修改 1：先引入 `RtmpConnection`
 
-完成标准：
+当前问题：
 
-- 服务端可以稳定接收一路推流
+- `RtmpServer.cc` 已经在做：
+  - 握手推进
+  - chunk 解析
+  - command 解码
+  - `connect` 响应
 
-### 阶段四：播放
+这条路继续走下去会很快失控。
 
-- 打通 `play`
-- 实现消息广播
-- 加入 metadata / GOP 缓存
+建议改法：
 
-完成标准：
+- 新增 `RtmpConnection`
+- `RtmpServer::onMessage()` 改成：
+  - 取 context
+  - 取 connection handler
+  - `handler->onMessage(buf)`
 
-- 一个 publisher，多个 player 可以正常播放
+这样后面 `createStream/publish/play/audio/video` 都进 `RtmpConnection`
 
-### 阶段五：工程化
+### 修改 2：把出站消息封成统一 helper
 
-- 断连清理
-- 单元测试
-- 集成测试
-- 抓包验证
-- 日志和指标
+当前 `RtmpServer` 里已经有：
 
-完成标准：
+- `sendWindowAcknowledgementSize`
+- `sendSetPeerBandwidth`
+- `sendSetChunkSize`
+- `sendConnectSuccess`
 
-- 从“能演示”变成“可持续维护”
+继续扩下去会很散。
 
-## 实施建议
+建议改法：
 
-实现顺序上，建议始终坚持这条原则：
+- 抽一个 `RtmpProtocolWriter` 或至少在 `RtmpConnection` 内聚：
+  - `sendControlMessage(type, payload)`
+  - `sendCommandResult(...)`
+  - `sendOnStatus(...)`
 
-- 先把连接状态跑通
-- 再把协议状态跑通
-- 再把命令语义跑通
-- 最后再把媒体分发做完整
+### 修改 3：扩展 `RtmpConnectionContext`
 
-不要从 `publish/play` 倒着推协议，也不要一开始就追求支持所有 RTMP 细节。  
-基于当前项目，最稳的路线是把 `net` 层复用到底，再把 RTMP 作为一个严格分层的上层协议重新实现。
+当前已经有：
+
+- `app`
+- `tcUrl`
+- `objectEncoding`
+- chunk size / bandwidth
+
+接下来至少还要加：
+
+- `streamId`
+- `streamName`
+- `streamPath`
+- 连接模式：
+  - unknown
+  - publisher
+  - player
+- 播放/发布是否已完成
+
+### 修改 4：让 `RtmpSession` 从“关系对象”变成“媒体会话对象”
+
+当前 `RtmpSession` 还比较轻。
+
+接下来要逐步扩成：
+
+- publisher
+- players
+- metadata
+- AVC sequence header
+- AAC sequence header
+- GOP cache
+- sendToPlayers()
+- replayCacheToPlayer()
+
+### 修改 5：不要再往 `RtmpServer` 加媒体逻辑
+
+后面这些都不要写进 `RtmpServer`：
+
+- video/audio 消息处理
+- metadata 解析
+- session 缓存更新
+- player 首包补发
+
+这些都应该放在：
+
+- `RtmpConnection`
+- `RtmpSession`
+
+### 修改 6：现在的 AMF0 结构足够继续，但后面要补编码场景
+
+当前 `Amf0Decoder/Encoder` 已够支撑：
+
+- `connect`
+- `_result`
+
+接下来还要补：
+
+- `createStream` 的 `_result`
+- `onStatus`
+- metadata 透传或重编码
+
+所以这一层先不必重构，优先继续向上推功能。
+
+## 新的推荐开发顺序
+
+如果从今天开始继续开发，我建议顺序改成：
+
+1. 新增 `RtmpConnection`，把 `RtmpServer` 瘦身
+2. 实现 `createStream`
+3. 实现 `publish`
+4. 实现 `play`
+5. 处理 metadata/video/audio
+6. 给 `RtmpSession` 加 sequence header 和 GOP cache
+7. 做 `deleteStream` 和断连回收
+8. 再决定要不要加 HTTP-FLV
+
+这个顺序比“继续直接在 `RtmpServer` 上叠命令”更稳。
+
+## 一句话结论
+
+如果目标只是“能讲 RTMP 协议”，当前结构已经够了。  
+如果目标是接近 `/home/ranx/work/viewcode/rtmp` 的复杂度，那么下一阶段的关键不是继续补协议细节，而是**把当前 `RtmpServer` 里的协议逻辑迁到 `RtmpConnection`，再把 `RtmpSession` 扩成真正的媒体会话层**。

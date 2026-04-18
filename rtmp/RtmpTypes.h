@@ -30,6 +30,9 @@ inline constexpr uint8_t kMessageTypeDataAmf0 = 18;
 inline constexpr uint8_t kMessageTypeSharedObjectAmf0 = 19;
 inline constexpr uint8_t kMessageTypeCommandAmf0 = 20;
 
+inline constexpr uint32_t kChunkStreamIdControl = 2;
+inline constexpr uint32_t kChunkStreamIdCommand = 3;
+
 enum class HandshakeState : uint8_t {
   kWaitC0C1,
   kSendS0S1S2,
