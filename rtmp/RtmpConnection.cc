@@ -56,8 +56,6 @@ bool RtmpConnection::onMessage(const TcpConnectionPtr& conn, Buffer* buf,
 
     if (!response.empty()) {
       conn->send(response);
-      LOG_INFO("RtmpConnection sent {} handshake bytes on {}", response.size(),
-               conn->name());
     }
 
     if (!context->handshake().isDone()) {
@@ -91,18 +89,11 @@ bool RtmpConnection::onMessage(const TcpConnectionPtr& conn, Buffer* buf,
 bool RtmpConnection::handleMessage(const TcpConnectionPtr& conn,
                                    const RtmpMessage& message,
                                    RtmpConnectionContext* context) {
-  LOG_INFO(
-      "RtmpConnection parsed message on {}: csid={}, type={}, len={}, stream={}",
-      conn->name(), message.chunkStreamId, message.typeId,
-      message.messageLength, message.messageStreamId);
-
   if (message.typeId == kMessageTypeSetChunkSize &&
       message.payload.size() >= sizeof(uint32_t)) {
     const uint32_t chunk_size = ReadUint32BE(message.payload.data());
     context->setInChunkSize(chunk_size);
     context->chunkParser().setInChunkSize(chunk_size);
-    LOG_INFO("RtmpConnection updated inbound chunk size on {} to {}",
-             conn->name(), chunk_size);
     return true;
   }
 
@@ -323,8 +314,6 @@ bool RtmpConnection::handleMediaMessage(const TcpConnectionPtr& conn,
                                         const RtmpMessage& message,
                                         RtmpConnectionContext* context) {
   if (context->role() != ConnectionRole::kPublisher) {
-    LOG_INFO("RtmpConnection ignores media message from non-publisher {}",
-             conn->name());
     return true;
   }
 
@@ -338,9 +327,6 @@ bool RtmpConnection::handleMediaMessage(const TcpConnectionPtr& conn,
   // 1. 把实时 metadata/audio/video 广播给现有 player
   // 2. 缓存 metadata、sequence header 和最近一个 GOP，供新 player 补发
   session->onMediaMessage(message, context->outChunkSize());
-  LOG_INFO(
-      "RtmpConnection broadcast media on {}: streamKey={}, type={}, players={}",
-      conn->name(), session->streamKey(), message.typeId, session->playerCount());
   return true;
 }
 

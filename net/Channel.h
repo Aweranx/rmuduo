@@ -33,8 +33,8 @@ class Channel : noncopyable {
   void disableAll();
 
   bool isNonEvent() { return events_ == kNoneEvent; }
-  bool isReading() { return events_ == kReadEvent; }
-  bool isWriting() { return events_ == kWriteEvent; }
+  bool isReading() { return (events_ & kReadEvent) != 0; }
+  bool isWriting() { return (events_ & kWriteEvent) != 0; }
 
   int index() const { return index_; }
   void set_index(int idx) { index_ = idx; }

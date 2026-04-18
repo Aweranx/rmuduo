@@ -81,7 +81,7 @@ class RtmpConnectionContext {
   void bindHandler(const std::shared_ptr<RtmpConnection>& handler) {
     handler_ = handler;
   }
-  std::shared_ptr<RtmpConnection> handler() const { return handler_.lock(); }
+  std::shared_ptr<RtmpConnection> handler() const { return handler_; }
 
  private:
   ConnectionRole role_ = ConnectionRole::kUnknown;
@@ -102,7 +102,7 @@ class RtmpConnectionContext {
   RtmpHandshake handshake_;
   // chunk 解析器同样是连接级对象，因为每个连接都要维护自己的 csid 状态。
   RtmpChunkParser chunkParser_;
-  std::weak_ptr<RtmpConnection> handler_;
+  std::shared_ptr<RtmpConnection> handler_;
 };
 
 }  // namespace rmuduo::rtmp

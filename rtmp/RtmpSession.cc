@@ -81,7 +81,7 @@ void RtmpSession::onMediaMessage(const RtmpMessage& message,
 
 void RtmpSession::replayCachedMessagesToPlayer(
     const TcpConnectionPtr& connection, uint32_t out_chunk_size) const {
-  if (!connection) {
+  if (!connection || !connection->connected()) {
     return;
   }
 
@@ -102,18 +102,22 @@ void RtmpSession::replayCachedMessagesToPlayer(
 }
 
 void RtmpSession::broadcastMessage(const RtmpMessage& message,
-                                   uint32_t out_chunk_size) const {
+                                   uint32_t out_chunk_size) {
   if (players_.empty()) {
     return;
   }
 
   const std::string encoded =
       RtmpChunkWriter::EncodeMessage(message, out_chunk_size);
-  for (const auto& [name, player] : players_) {
-    (void)name;
-    if (player) {
-      player->send(encoded);
+  for (auto it = players_.begin(); it != players_.end();) {
+    const auto& player = it->second;
+    if (!player || !player->connected()) {
+      it = players_.erase(it);
+      continue;
     }
+
+    player->send(encoded);
+    ++it;
   }
 }
 

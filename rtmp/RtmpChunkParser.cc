@@ -73,7 +73,13 @@ bool RtmpChunkParser::parseOneChunk(Buffer* buf,
                           &message_header_size, error_message)) {
     return false;
   }
-  if (message_header_size == 0) {
+  // fmt=3 在没有 extended timestamp 时，本来就不会额外占用 message header 字节。
+  // 这里不能把 0 当成“半包未完成”，否则像 ffmpeg 的 connect 第二个 chunk
+  // 就会一直卡在缓冲区里，永远拼不出完整 message。
+  const bool fmt3_without_extra_header =
+      fmt == kChunkHeaderType3 && state.headerInitialized &&
+      state.extendedTimestamp == 0;
+  if (message_header_size == 0 && !fmt3_without_extra_header) {
     return true;
   }
   offset += message_header_size;

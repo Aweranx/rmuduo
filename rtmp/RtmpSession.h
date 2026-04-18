@@ -32,7 +32,7 @@ class RtmpSession : public std::enable_shared_from_this<RtmpSession> {
   size_t playerCount() const { return players_.size(); }
 
  private:
-  void broadcastMessage(const RtmpMessage& message, uint32_t out_chunk_size) const;
+  void broadcastMessage(const RtmpMessage& message, uint32_t out_chunk_size);
   void cacheMediaMessage(const RtmpMessage& message);
 
   std::string streamKey_;

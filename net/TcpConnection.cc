@@ -113,8 +113,10 @@ void TcpConnection::send(const std::string& buf) {
     if (loop_->isInLoopThread()) {
       sendInLoop(buf.c_str(), buf.size());
     } else {
-      loop_->runInLoop(
-          std::bind(&TcpConnection::sendInLoop, this, buf.c_str(), buf.size()));
+      auto message = std::make_shared<std::string>(buf);
+      loop_->runInLoop([this, message]() {
+        sendInLoop(message->data(), message->size());
+      });
     }
   }
 }
@@ -194,7 +196,7 @@ void TcpConnection::connectDestroyed() {
 }
 
 void TcpConnection::shutdown() {
-  if (state_ == kDisconnected) {
+  if (state_ == kConnected) {
     setState(kDisconnecting);
     loop_->runInLoop(std::bind(&TcpConnection::shutdownInLoop, this));
   }
