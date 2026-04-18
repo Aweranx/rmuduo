@@ -9,6 +9,8 @@
 #include <rmuduo/net/EventLoop.h>
 #include <rmuduo/net/Logger.h>
 
+#include "RtmpCommandMessage.h"
+
 namespace rmuduo::rtmp {
 
 namespace {
@@ -117,6 +119,23 @@ void RtmpServer::onMessage(const TcpConnectionPtr& conn, Buffer* buf,
       context->chunkParser().setInChunkSize(chunk_size);
       LOG_INFO("RtmpServer updated inbound chunk size on {} to {}",
                conn->name(), chunk_size);
+    }
+
+    // 第五步先把 AMF0 command message 解到结构化字段，下一步再做分发和回包。
+    if (message.typeId == kMessageTypeCommandAmf0) {
+      RtmpCommandMessage command;
+      std::string command_error;
+      if (!DecodeCommandMessageAmf0(message, &command, &command_error)) {
+        LOG_ERROR("RtmpServer failed to decode AMF0 command on {}: {}",
+                  conn->name(), command_error);
+        conn->shutdown();
+        return;
+      }
+
+      LOG_INFO(
+          "RtmpServer parsed AMF0 command on {}: name={}, transactionId={}, args={}",
+          conn->name(), command.name, command.transactionId,
+          command.arguments.size());
     }
   }
 }
