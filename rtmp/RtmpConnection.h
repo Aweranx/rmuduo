@@ -15,9 +15,12 @@ class Buffer;
 namespace rmuduo::rtmp {
 
 class RtmpConnectionContext;
+class RtmpServer;
 
 class RtmpConnection {
  public:
+  explicit RtmpConnection(RtmpServer* server) : server_(server) {}
+
   bool onMessage(const TcpConnectionPtr& conn, Buffer* buf, Timestamp receiveTime,
                  RtmpConnectionContext* context);
 
@@ -33,6 +36,18 @@ class RtmpConnection {
   bool handleCreateStream(const TcpConnectionPtr& conn,
                           RtmpConnectionContext* context,
                           const RtmpCommandMessage& command);
+  bool handlePublish(const TcpConnectionPtr& conn,
+                     RtmpConnectionContext* context,
+                     const RtmpCommandMessage& command);
+  bool handlePlay(const TcpConnectionPtr& conn,
+                  RtmpConnectionContext* context,
+                  const RtmpCommandMessage& command);
+  bool handleDeleteStream(const TcpConnectionPtr& conn,
+                          RtmpConnectionContext* context,
+                          const RtmpCommandMessage& command);
+  bool handleMediaMessage(const TcpConnectionPtr& conn,
+                          const RtmpMessage& message,
+                          RtmpConnectionContext* context);
 
   void sendWindowAcknowledgementSize(const TcpConnectionPtr& conn,
                                      uint32_t window_size) const;
@@ -44,6 +59,11 @@ class RtmpConnection {
   void sendCreateStreamResult(const TcpConnectionPtr& conn,
                               const RtmpCommandMessage& command,
                               uint32_t stream_id) const;
+  void sendOnStatus(const TcpConnectionPtr& conn, uint32_t message_stream_id,
+                    std::string_view code, std::string_view description,
+                    bool error) const;
+
+  RtmpServer* server_ = nullptr;
 };
 
 }  // namespace rmuduo::rtmp

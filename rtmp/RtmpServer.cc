@@ -23,12 +23,32 @@ void RtmpServer::start() {
   server_.start();
 }
 
+std::shared_ptr<RtmpSession> RtmpServer::getOrCreateSession(
+    const std::string& stream_key) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return sessionManager_.getOrCreate(stream_key);
+}
+
+void RtmpServer::detachConnectionFromSession(const TcpConnectionPtr& conn,
+                                             RtmpConnectionContext* context) {
+  cleanupConnection(conn, context);
+  if (context == nullptr) {
+    return;
+  }
+
+  context->clearSession();
+  context->setRole(ConnectionRole::kUnknown);
+  context->setStreamId(0);
+  context->setStreamName({});
+  context->setPublishType({});
+}
+
 void RtmpServer::onConnection(const TcpConnectionPtr& conn) {
   if (conn->connected()) {
     conn->setContext(RtmpConnectionContext{});
     auto* context = getContext(conn);
     if (context != nullptr) {
-      context->bindHandler(std::make_shared<RtmpConnection>());
+      context->bindHandler(std::make_shared<RtmpConnection>(this));
     }
     LOG_INFO("RtmpServer accepted connection {} from {}", conn->name(),
              conn->peerAddress().toIpPort());

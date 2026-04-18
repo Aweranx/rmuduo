@@ -20,6 +20,9 @@ class RtmpServer : noncopyable {
   EventLoop* getLoop() const { return server_.getLoop(); }
   void setThreadNum(int numThreads) { server_.setThreadNum(numThreads); }
   void start();
+  std::shared_ptr<RtmpSession> getOrCreateSession(const std::string& stream_key);
+  void detachConnectionFromSession(const TcpConnectionPtr& conn,
+                                   RtmpConnectionContext* context);
 
  private:
   // 连接建立/关闭时挂接和清理 RTMP 上下文。

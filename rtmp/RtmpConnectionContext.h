@@ -61,6 +61,11 @@ class RtmpConnectionContext {
     streamName_ = std::move(stream_name);
   }
 
+  const std::string& publishType() const { return publishType_; }
+  void setPublishType(std::string publish_type) {
+    publishType_ = std::move(publish_type);
+  }
+
   std::string streamKey() const;
 
   void bindSession(const std::shared_ptr<RtmpSession>& session);
@@ -88,6 +93,7 @@ class RtmpConnectionContext {
   std::string app_;
   std::string tcUrl_;
   std::string streamName_;
+  std::string publishType_;
   double objectEncoding_ = 0.0;
   uint32_t streamId_ = 0;
   uint32_t nextStreamId_ = 1;

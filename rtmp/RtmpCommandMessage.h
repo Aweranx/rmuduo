@@ -11,6 +11,7 @@ namespace rmuduo::rtmp {
 struct RtmpCommandMessage {
   std::string name;
   double transactionId = 0.0;
+  uint32_t messageStreamId = 0;
   Amf0Value commandObject = Amf0Value::Null();
   std::vector<Amf0Value> arguments;
 };

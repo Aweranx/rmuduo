@@ -40,6 +40,7 @@ bool DecodeCommandMessageAmf0(const RtmpMessage& message,
 
   command->name = values[0].stringValue();
   command->transactionId = values[1].numberValue();
+  command->messageStreamId = message.messageStreamId;
   command->commandObject =
       values.size() >= 3 ? values[2] : Amf0Value::Null();
   command->arguments.assign(values.begin() + std::min<size_t>(3, values.size()),
