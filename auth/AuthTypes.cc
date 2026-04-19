@@ -24,6 +24,33 @@ UserRole roleFromString(std::string_view role) {
   return UserRole::kUnknown;
 }
 
+std::string_view rtmpPermissionToString(RtmpPermission permission) {
+  switch (permission) {
+    case RtmpPermission::kPublish:
+      return "publish";
+    case RtmpPermission::kPlay:
+      return "play";
+    case RtmpPermission::kBoth:
+      return "both";
+    case RtmpPermission::kUnknown:
+      return "unknown";
+  }
+  return "unknown";
+}
+
+RtmpPermission rtmpPermissionFromString(std::string_view permission) {
+  if (permission == "publish") {
+    return RtmpPermission::kPublish;
+  }
+  if (permission == "play") {
+    return RtmpPermission::kPlay;
+  }
+  if (permission == "both") {
+    return RtmpPermission::kBoth;
+  }
+  return RtmpPermission::kUnknown;
+}
+
 std::string_view authErrorMessage(AuthError error) {
   switch (error) {
     case AuthError::kOk:

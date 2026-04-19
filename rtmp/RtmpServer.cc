@@ -23,6 +23,22 @@ void RtmpServer::start() {
   server_.start();
 }
 
+bool RtmpServer::authorizePublish(const std::string& stream_key,
+                                  const std::string& ticket) const {
+  if (!authCallback_) {
+    return true;
+  }
+  return authCallback_(stream_key, ticket, true);
+}
+
+bool RtmpServer::authorizePlay(const std::string& stream_key,
+                               const std::string& ticket) const {
+  if (!authCallback_) {
+    return true;
+  }
+  return authCallback_(stream_key, ticket, false);
+}
+
 std::shared_ptr<RtmpSession> RtmpServer::getOrCreateSession(
     const std::string& stream_key) {
   std::lock_guard<std::mutex> lock(mutex_);

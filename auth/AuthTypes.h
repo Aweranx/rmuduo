@@ -12,6 +12,13 @@ enum class UserRole {
   kStudent,
 };
 
+enum class RtmpPermission {
+  kUnknown,
+  kPublish,
+  kPlay,
+  kBoth,
+};
+
 struct User {
   std::string userId;
   std::string username;
@@ -25,6 +32,17 @@ struct AuthSession {
   std::string userId;
   std::string username;
   UserRole role = UserRole::kUnknown;
+  int64_t expireAt = 0;
+};
+
+struct RtmpTicket {
+  std::string ticket;
+  std::string userId;
+  std::string username;
+  UserRole role = UserRole::kUnknown;
+  std::string streamKey;
+  bool allowPublish = false;
+  bool allowPlay = false;
   int64_t expireAt = 0;
 };
 
@@ -45,6 +63,8 @@ struct AuthResult {
 
 std::string_view roleToString(UserRole role);
 UserRole roleFromString(std::string_view role);
+std::string_view rtmpPermissionToString(RtmpPermission permission);
+RtmpPermission rtmpPermissionFromString(std::string_view permission);
 std::string_view authErrorMessage(AuthError error);
 
 }  // namespace auth

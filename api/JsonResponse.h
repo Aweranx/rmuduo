@@ -57,4 +57,12 @@ inline std::string makeError(int code, std::string_view message) {
   return makeJsonResponse(code, message, "null");
 }
 
+inline std::string makeField(std::string_view key, std::string_view value) {
+  return quote(key) + ":" + quote(value);
+}
+
+inline std::string makeNumberField(std::string_view key, int64_t value) {
+  return quote(key) + ":" + std::to_string(value);
+}
+
 }  // namespace api

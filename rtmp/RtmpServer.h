@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <mutex>
 #include <string>
 
@@ -13,12 +14,20 @@ namespace rmuduo::rtmp {
 
 class RtmpServer : noncopyable {
  public:
+  using RtmpAuthCallback = std::function<bool(
+      const std::string& stream_key, const std::string& ticket, bool publish)>;
+
   RtmpServer(EventLoop* loop, const InetAddress& listen_addr,
              const std::string& name,
              TcpServer::Option option = TcpServer::kNoReusePort);
 
   EventLoop* getLoop() const { return server_.getLoop(); }
   void setThreadNum(int numThreads) { server_.setThreadNum(numThreads); }
+  void setAuthCallback(RtmpAuthCallback cb) { authCallback_ = std::move(cb); }
+  bool authorizePublish(const std::string& stream_key,
+                        const std::string& ticket) const;
+  bool authorizePlay(const std::string& stream_key,
+                     const std::string& ticket) const;
   void start();
   std::shared_ptr<RtmpSession> getOrCreateSession(const std::string& stream_key);
   void detachConnectionFromSession(const TcpConnectionPtr& conn,
@@ -37,6 +46,7 @@ class RtmpServer : noncopyable {
   TcpServer server_;
   mutable std::mutex mutex_;
   RtmpSessionManager sessionManager_;
+  RtmpAuthCallback authCallback_;
 };
 
 }  // namespace rmuduo::rtmp

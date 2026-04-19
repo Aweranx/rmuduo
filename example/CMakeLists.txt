@@ -21,6 +21,8 @@ target_link_libraries(rtmp_server_test PRIVATE
 )
 
 target_link_libraries(login_server PRIVATE
+    rmuduo_auth
+    rmuduo_rtmp
     rmuduo_api
     rmuduo_http
     rmuduo

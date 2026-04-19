@@ -1,7 +1,9 @@
 #include "RtmpConnection.h"
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -30,6 +32,45 @@ void AppendUint32BE(std::string* out, uint32_t value) {
   out->push_back(static_cast<char>((value >> 16) & 0xFF));
   out->push_back(static_cast<char>((value >> 8) & 0xFF));
   out->push_back(static_cast<char>(value & 0xFF));
+}
+
+struct StreamTarget {
+  std::string streamName;
+  std::string ticket;
+};
+
+std::optional<StreamTarget> ParseStreamTarget(std::string_view raw_name) {
+  if (raw_name.empty()) {
+    return std::nullopt;
+  }
+
+  StreamTarget target;
+  const size_t question = raw_name.find('?');
+  if (question == std::string_view::npos) {
+    target.streamName = std::string(raw_name);
+    return target;
+  }
+
+  target.streamName = std::string(raw_name.substr(0, question));
+  std::string_view query = raw_name.substr(question + 1);
+  while (!query.empty()) {
+    size_t ampersand = query.find('&');
+    std::string_view part =
+        ampersand == std::string_view::npos ? query : query.substr(0, ampersand);
+    constexpr std::string_view kTicketPrefix = "ticket=";
+    if (part.starts_with(kTicketPrefix)) {
+      target.ticket = std::string(part.substr(kTicketPrefix.size()));
+    }
+    if (ampersand == std::string_view::npos) {
+      break;
+    }
+    query.remove_prefix(ampersand + 1);
+  }
+
+  if (target.streamName.empty()) {
+    return std::nullopt;
+  }
+  return target;
 }
 
 }  // namespace
@@ -231,7 +272,13 @@ bool RtmpConnection::handlePublish(const TcpConnectionPtr& conn,
     return false;
   }
 
-  context->setStreamName(command.arguments[0].stringValue());
+  auto target = ParseStreamTarget(command.arguments[0].stringValue());
+  if (!target) {
+    LOG_ERROR("RtmpConnection publish invalid stream name on {}", conn->name());
+    return false;
+  }
+
+  context->setStreamName(target->streamName);
   if (command.arguments.size() >= 2 && command.arguments[1].isString()) {
     context->setPublishType(command.arguments[1].stringValue());
   }
@@ -239,6 +286,14 @@ bool RtmpConnection::handlePublish(const TcpConnectionPtr& conn,
   const std::string stream_key = context->streamKey();
   if (stream_key.empty()) {
     LOG_ERROR("RtmpConnection publish stream key is empty on {}", conn->name());
+    return false;
+  }
+
+  if (!server_->authorizePublish(stream_key, target->ticket)) {
+    LOG_INFO("RtmpConnection publish rejected on {}: unauthorized streamKey={}",
+             conn->name(), stream_key);
+    sendOnStatus(conn, context->streamId(), "NetStream.Publish.BadName",
+                 "Invalid RTMP ticket.", true);
     return false;
   }
 
@@ -288,12 +343,24 @@ bool RtmpConnection::handlePlay(const TcpConnectionPtr& conn,
     return false;
   }
 
-  // play 也依赖 app + streamName 定位会话，这里先只建立 player 关系，
-  // metadata、首帧缓存和实时转发放到后续步骤里补。
-  context->setStreamName(command.arguments[0].stringValue());
+  auto target = ParseStreamTarget(command.arguments[0].stringValue());
+  if (!target) {
+    LOG_ERROR("RtmpConnection play invalid stream name on {}", conn->name());
+    return false;
+  }
+
+  context->setStreamName(target->streamName);
   const std::string stream_key = context->streamKey();
   if (stream_key.empty()) {
     LOG_ERROR("RtmpConnection play stream key is empty on {}", conn->name());
+    return false;
+  }
+
+  if (!server_->authorizePlay(stream_key, target->ticket)) {
+    LOG_INFO("RtmpConnection play rejected on {}: unauthorized streamKey={}",
+             conn->name(), stream_key);
+    sendOnStatus(conn, context->streamId(), "NetStream.Play.Failed",
+                 "Invalid RTMP ticket.", true);
     return false;
   }
 
