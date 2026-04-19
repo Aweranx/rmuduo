@@ -28,7 +28,7 @@ void EventLoopThreadPool::start(const ThreadInitCallback& cb) {
     threads_.push_back(std::unique_ptr<EventLoopThread>(t));
     loops_.push_back(t->startLoop());
   }
-  if (numThreads_ == 0) {
+  if (numThreads_ == 0 && cb) {
     cb(baseLoop_);
   }
 }

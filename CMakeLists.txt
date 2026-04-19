@@ -35,6 +35,12 @@ add_subdirectory(net)
 # 其次构建 HTTP 库 (生成 rmuduo_http，依赖 rmuduo)
 add_subdirectory(http)
 
+# API 业务基础库
+add_subdirectory(api)
+
+# 登录认证库
+add_subdirectory(auth)
+
 # RTMP 库
 add_subdirectory(rtmp)
 
