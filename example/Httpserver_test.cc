@@ -1,5 +1,5 @@
 
-#include <rmuduo/http/HttpServer.h>
+#include "HttpServer.h"
 
 
 #include <iostream>
@@ -48,6 +48,14 @@ void onRequest(const HttpRequest& req, HttpResponse* resp)
     resp->addHeader("Server", "Muduo");
     resp->setBody("hello, world!\n");
   }
+  else if (req.method() == HttpRequest::kPost && req.path() == "/post")
+  {
+    resp->setStatusCode(HttpResponse::k200Ok);
+    resp->setStatusMessage("OK");
+    resp->setContentType("text/plain");
+    resp->addHeader("Server", "Muduo");
+    resp->setBody(std::string(req.body()));
+  }
   else
   {
     resp->setStatusCode(HttpResponse::k404NotFound);
@@ -65,7 +73,7 @@ int main(int argc, char* argv[])
     numThreads = atoi(argv[1]);
   }
   EventLoop loop;
-  HttpServer server(&loop, InetAddress(8888), "dummy");
+  HttpServer server(&loop, InetAddress(8087), "dummy");
   server.setHttpCallback(onRequest);
   server.setThreadNum(numThreads);
   server.start();

@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <map>
 #include <string>
+#include <string_view>
+#include <unordered_map>
 using namespace rmuduo;
 
 class HttpRequest {
@@ -49,6 +51,9 @@ class HttpRequest {
     query_.assign(start, end);
   }
   std::string_view query() const { return query_; }
+  void setBody(const char* start, const char* end) { body_.assign(start, end); }
+  void setBody(std::string_view body) { body_ = body; }
+  std::string_view body() const { return body_; }
   void setReceiveTime(Timestamp t) { receiveTime_ = t; }
   Timestamp receiveTime() const { return receiveTime_; }
   // colon是冒号
@@ -75,6 +80,7 @@ class HttpRequest {
     std::swap(version_, that.version_);
     path_.swap(that.path_);
     query_.swap(that.query_);
+    body_.swap(that.body_);
     receiveTime_.swap(that.receiveTime_);
     headers_.swap(that.headers_);
   }
@@ -84,6 +90,7 @@ class HttpRequest {
   Version version_;
   std::string path_;
   std::string query_;
+  std::string body_;
   Timestamp receiveTime_;
   std::map<std::string, std::string> headers_;
 };

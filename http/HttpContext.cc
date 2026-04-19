@@ -1,8 +1,23 @@
 #include "HttpContext.h"
 
 #include <algorithm>
+#include <charconv>
+#include <cctype>
+#include <string_view>
 
 #include "HttpRequest.h"
+
+namespace {
+
+bool equalCaseInsensitive(std::string_view lhs, std::string_view rhs) {
+  return lhs.size() == rhs.size() &&
+         std::equal(lhs.begin(), lhs.end(), rhs.begin(),
+                    [](unsigned char a, unsigned char b) {
+                      return std::tolower(a) == std::tolower(b);
+                    });
+}
+
+}  // namespace
 
 // 内容:  POST      /api/login      HTTP/1.1       \r\n
 // 对应:  [Method]   [Path/URL]      [Version]      [CRLF]
@@ -46,6 +61,45 @@ bool HttpContext::processRequestLine(const char* begin, const char* end) {
   return succeed;
 }
 
+bool HttpContext::parseContentLength() {
+  contentLength_ = 0;
+  for (const auto& header : request_.headers()) {
+    if (!equalCaseInsensitive(header.first, "Content-Length")) {
+      continue;
+    }
+
+    std::string_view value(header.second);
+    size_t first = 0;
+    while (first < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[first]))) {
+      ++first;
+    }
+
+    size_t last = value.size();
+    while (last > first &&
+           std::isspace(static_cast<unsigned char>(value[last - 1]))) {
+      --last;
+    }
+
+    value = value.substr(first, last - first);
+    if (value.empty()) {
+      return false;
+    }
+
+    size_t length = 0;
+    const char* begin = value.data();
+    const char* end = value.data() + value.size();
+    auto [ptr, ec] = std::from_chars(begin, end, length);
+    if (ec != std::errc() || ptr != end) {
+      return false;
+    }
+
+    contentLength_ = length;
+    break;
+  }
+  return true;
+}
+
 bool HttpContext::parseRequest(Buffer* buf, Timestamp receiveTime) {
   bool ok = true;
   bool hasMore = true;
@@ -73,15 +127,32 @@ bool HttpContext::parseRequest(Buffer* buf, Timestamp receiveTime) {
         if (colon != crlf) {
           request_.addHeader(buf->peek(), colon, crlf);
         } else {
-          state_ = kGotAll;
-          hasMore = false;
+          ok = parseContentLength();
+          if (!ok) {
+            hasMore = false;
+          } else if (contentLength_ > 0) {
+            state_ = kExpectBody;
+          } else {
+            state_ = kGotAll;
+            hasMore = false;
+          }
         }
-        buf->retrieveUntil(crlf + 2);
+        if (ok) {
+          buf->retrieveUntil(crlf + 2);
+        }
       } else {
         hasMore = false;
       }
     } else if (state_ == kExpectBody) {
-      // add code for body
+      if (buf->readableBytes() >= contentLength_) {
+        request_.setBody(buf->peek(), buf->peek() + contentLength_);
+        buf->retrieve(contentLength_);
+        state_ = kGotAll;
+      } else {
+        hasMore = false;
+      }
+    } else if (state_ == kGotAll) {
+      hasMore = false;
     }
   }
   return ok;
